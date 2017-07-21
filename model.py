@@ -1,6 +1,7 @@
 from parser import st2list
 
 from layer import *
+from selu import *
 
 
 def leaky_relu(x, neg_thres=0.2):
@@ -18,11 +19,20 @@ def conv_block(
         padding='SAME'
 ):
     input_channel = input_t.get_shape().as_list()[-1]
+    use_selu = False
+
     with tf.variable_scope(layer_name):
-        w_conv = weight_variable([kernel, kernel, input_channel, output_channel], name=layer_name)
-        b_conv = bias_variable([output_channel], name=layer_name)
+        if use_selu and activation == tf.nn.elu:
+            w_conv = weight_variable_for_selu([kernel, kernel, input_channel, output_channel], name=layer_name)
+            b_conv = bias_variable_for_selu([output_channel], name=layer_name)
+        else:
+            w_conv = weight_variable([kernel, kernel, input_channel, output_channel], name=layer_name)
+            b_conv = bias_variable([output_channel], name=layer_name)
         output_t = tf.nn.bias_add(conv2d(input_t, w_conv, stride=[1, stride, stride, 1], padding=padding), b_conv)
-        output_t = activation(output_t)
+        if use_selu and activation == tf.nn.elu:
+            output_t = selu(output_t)
+        else:
+            output_t = activation(output_t)
     return output_t
 
 
@@ -48,11 +58,18 @@ def deconv_block(
 
 
 class BEGANModel:
-    def __init__(self, batch_size=16):
+    def __init__(self, noise_size, channel_size, batch_size=16):
 
-        self.noise_size = 100
-        self.n_ch = 64
+        self.noise_size = noise_size
+        self.n_ch = channel_size
         self.batch_size = batch_size
+
+        self.image_info = {
+            'w': 128,
+            'h': 128,
+            'c': 3,
+        }
+        self.scale_factor = 4  # width_height / (2^scale_factor) = 8
 
         self.global_step = tf.Variable(0, trainable=False, name='global_step')
         self.prop_k = tf.Variable(0.0, trainable=False, name='proportional_control_theory_k')
@@ -77,7 +94,7 @@ class BEGANModel:
 
         self.input_image_ph = tf.placeholder(
             dtype=tf.uint8,
-            shape=[None, 32, 32, 3],
+            shape=[None, self.image_info['w'], self.image_info['h'], self.image_info['c']],
             name='input_image_placeholder')
 
         self.noise_ph = tf.placeholder(
@@ -162,6 +179,8 @@ class BEGANModel:
             reuse=False,
             name="generator_or_decoder",
     ):
+        repeat_n = self.scale_factor + 1
+
         with tf.variable_scope(name, reuse=reuse):
             with tf.variable_scope("preprocessing"):
                 output_t = input_t
@@ -174,8 +193,6 @@ class BEGANModel:
 
             output_t = tf.reshape(output_t, [-1, 8, 8, n_ch])
             h0 = output_t
-
-            repeat_n = 3
 
             for i in range(repeat_n):
                 output_t = conv_block(
@@ -201,7 +218,7 @@ class BEGANModel:
                 output_t,
                 3,
                 layer_name="conv_last",
-                activation=tf.nn.tanh
+                # activation=tf.nn.tanh
             )
 
         return output_t
@@ -216,6 +233,7 @@ class BEGANModel:
     ):
 
         output_t = input_t
+        repeat_n = self.scale_factor+1
 
         with tf.variable_scope(name, reuse=reuse):
 
@@ -224,8 +242,6 @@ class BEGANModel:
                 n_ch,
                 layer_name="conv_first",
             )
-
-            repeat_n = 3
 
             for i in range(repeat_n):
                 output_t = conv_block(
@@ -251,11 +267,10 @@ class BEGANModel:
             print(output_t)
 
             # input size 2 w/ channel 512 => fc layer
-            output_t = tf.reshape(output_t, [-1, 8*8*3*n_ch])
+            output_t = tf.reshape(output_t, [-1, 8*8*repeat_n*n_ch])
 
-            # Branch 1. discriminator for real / fake
             with tf.variable_scope("disc_fc"):
-                w_conv = weight_variable([8*8*3*n_ch, h_size], name="disc_fc")
+                w_conv = weight_variable([8*8*repeat_n*n_ch, h_size], name="disc_fc")
                 b_conv = bias_variable([h_size], name="disc_fc")
                 output_t = tf.nn.bias_add(tf.matmul(output_t, w_conv), b_conv)
 

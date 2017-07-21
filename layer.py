@@ -6,7 +6,6 @@ def weight_variable(shape, mean=0.0, name=None):
     return tf.get_variable(
         name+"/weight",
         shape=shape,
-        # initializer=tf.contrib.layers.xavier_initializer(),
         initializer=tf.truncated_normal_initializer(mean=mean, stddev=0.02),
         dtype=tf.float32
     )

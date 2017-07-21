@@ -14,8 +14,8 @@ class Loader:
     def __init__(self, data_path, batch_size):
         self.sess = tf.Session()
         self.image_info = {
-            'width': 32,
-            'height': 32,
+            'width': 128,
+            'height': 128,
             'channel': 3,
         }
 
@@ -75,22 +75,20 @@ class Loader:
         batch = self.get_empty_batch(batch_size)
         for idx in range(batch_size):
             single_data = self.data[self.perm_idx[self.cur_idx + idx]]
-
-            if False:  # DEPRECATED very slow. don't use this routine.
-                with tf.gfile.FastGFile(single_data.path, 'rb') as f:
-                    image_data = f.read()
-                decode_jpeg_tensor = tf.image.decode_jpeg(image_data, channels=3)
-                image = self.sess.run(decode_jpeg_tensor)
-            else:
+            try:
                 image = cv2.imread(single_data.path, 1)
 
-            batch.images[idx, :, :, :] = image
-            batch.labels[idx] = single_data.label
+                # CelebA image size : 218 x 178
+                image = image[20:-20, :, :]
+                image = cv2.resize(image, (128, 128), interpolation=cv2.INTER_CUBIC)
 
-            # Verifying batch
-            # print(single_data.path)
-            # print(batch.images[idx, 0, 0, 0])
-            # print(batch.labels[idx])
+                batch.images[idx, :, :, :] = image
+                batch.labels[idx] = single_data.label
+
+            except:
+                print('failed to load image from [%s]... skip this batch.' % single_data.path)
+                self.cur_idx += batch_size
+                return None
 
         self.cur_idx += batch_size
 

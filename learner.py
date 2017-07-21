@@ -15,9 +15,11 @@ tf.app.flags.DEFINE_boolean('train_continue', False, 'flag for continue training
 tf.app.flags.DEFINE_boolean('valid_only', False, 'flag for validation only. this will make train_continue flag ignored')
 
 tf.app.flags.DEFINE_integer('batch_size', 16, 'mini-batch size for training')
+tf.app.flags.DEFINE_integer('feature_size', 64, 'encoding feature size for auto encoder')
+tf.app.flags.DEFINE_integer('channel_size', 128, 'channel size for filter in auto encoder')
 tf.app.flags.DEFINE_float('lr', 8e-5, 'initial learning rate')
-tf.app.flags.DEFINE_float('lr_decay_ratio', 1.0, 'ratio for decaying learning rate')
-tf.app.flags.DEFINE_integer('lr_decay_interval', 10000, 'step interval for decaying learning rate')
+tf.app.flags.DEFINE_float('lr_decay_ratio', 0.5, 'ratio for decaying learning rate')
+tf.app.flags.DEFINE_integer('lr_decay_interval', 20000, 'step interval for decaying learning rate')
 tf.app.flags.DEFINE_integer('lambda_k', 1e-3, 'update ratio for balancing generator and discriminator')
 tf.app.flags.DEFINE_integer('gamma', 0.5, 'factor for balancing generator and discriminator')
 tf.app.flags.DEFINE_integer('train_log_interval', 1000, 'step interval for triggering print logs of train')
@@ -27,14 +29,20 @@ FLAGS = tf.app.flags.FLAGS
 
 print("Learning rate = %e" % FLAGS.lr)
 
+
 class GanLearner:
     def __init__(self):
         self.sess = tf.Session()
         self.batch_size = FLAGS.batch_size
-        self.model = BEGANModel(batch_size=self.batch_size)
+        self.feature_size = FLAGS.feature_size
+        self.channel_size = FLAGS.channel_size
+        self.model = BEGANModel(noise_size=self.feature_size, channel_size=self.channel_size, batch_size=self.batch_size)
 
-        self.train_loader = OcrLoader(data_path=os.path.join(FLAGS.data_path, "train"), batch_size=self.batch_size)
-        self.valid_loader = OcrLoader(data_path=os.path.join(FLAGS.data_path, "val"), batch_size=self.batch_size)
+        self.train_loader = Loader(data_path=os.path.join(FLAGS.data_path, "train"), batch_size=self.batch_size)
+        try:
+            self.valid_loader = Loader(data_path=os.path.join(FLAGS.data_path, "val"), batch_size=self.batch_size)
+        except FileNotFoundError:
+            self.valid_loader = Loader(data_path=os.path.join(FLAGS.data_path, "valid"), batch_size=self.batch_size)
 
         self.epoch_counter = 1
         self.lr = FLAGS.lr
@@ -90,7 +98,6 @@ class GanLearner:
 
     def convert_image(self, image):
         return (image + 1.0) * (255.0/2.0)
-
 
     def train(self):
         self.train_loader.reset()
