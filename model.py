@@ -2,7 +2,8 @@ from parser import st2list
 
 from layer import *
 from selu import *
-
+import math
+import collections
 
 def leaky_relu(x, neg_thres=0.2):
     y = tf.maximum(x, neg_thres*x)
@@ -56,20 +57,17 @@ def deconv_block(
         output_t = activation(output_t)
     return output_t
 
-
 class BEGANModel:
-    def __init__(self, noise_size, channel_size, batch_size=16):
+    def __init__(self, noise_size, channel_size, image_info, batch_size=16, feature_map_wh=8):
 
         self.noise_size = noise_size
         self.n_ch = channel_size
+        self.image_info = image_info
         self.batch_size = batch_size
+        self.feature_map_wh = feature_map_wh
 
-        self.image_info = {
-            'w': 128,
-            'h': 128,
-            'c': 3,
-        }
-        self.scale_factor = 4  # width_height / (2^scale_factor) = 8
+        assert(self.image_info.w == self.image_info.h)
+        self.scale_factor = int(math.log2(self.image_info.w / self.feature_map_wh))  # width_height / (2^scale_factor) = 8
 
         self.global_step = tf.Variable(0, trainable=False, name='global_step')
         self.prop_k = tf.Variable(0.0, trainable=False, name='proportional_control_theory_k')
@@ -94,7 +92,7 @@ class BEGANModel:
 
         self.input_image_ph = tf.placeholder(
             dtype=tf.uint8,
-            shape=[None, self.image_info['w'], self.image_info['h'], self.image_info['c']],
+            shape=[None, self.image_info.w, self.image_info.h, self.image_info.c],
             name='input_image_placeholder')
 
         self.noise_ph = tf.placeholder(
@@ -186,12 +184,12 @@ class BEGANModel:
                 output_t = input_t
 
             with tf.variable_scope("fc_first"):
-                w_fc = weight_variable([h_size, 8*8*n_ch], name="fc_first")
-                b_fc = bias_variable([8*8*n_ch], name="fc_first")
+                w_fc = weight_variable([h_size, self.feature_map_wh * self.feature_map_wh * n_ch], name="fc_first")
+                b_fc = bias_variable([self.feature_map_wh * self.feature_map_wh*n_ch], name="fc_first")
                 output_t = tf.nn.bias_add(tf.matmul(output_t, w_fc), b_fc)
                 # output_t = tf.nn.elu(output_t)
 
-            output_t = tf.reshape(output_t, [-1, 8, 8, n_ch])
+            output_t = tf.reshape(output_t, [-1, self.feature_map_wh, self.feature_map_wh, n_ch])
             h0 = output_t
 
             for i in range(repeat_n):
@@ -207,7 +205,7 @@ class BEGANModel:
                 )
 
                 if i != (repeat_n-1):
-                    w_h = 8 * 2**(i+1)
+                    w_h = self.feature_map_wh * 2**(i+1)
                     output_t = tf.concat(
                         [tf.image.resize_nearest_neighbor(output_t, [w_h, w_h]),
                          tf.image.resize_nearest_neighbor(h0, [w_h, w_h])],
@@ -267,10 +265,10 @@ class BEGANModel:
             print(output_t)
 
             # input size 2 w/ channel 512 => fc layer
-            output_t = tf.reshape(output_t, [-1, 8*8*repeat_n*n_ch])
+            output_t = tf.reshape(output_t, [-1, self.feature_map_wh*self.feature_map_wh*repeat_n*n_ch])
 
             with tf.variable_scope("disc_fc"):
-                w_conv = weight_variable([8*8*repeat_n*n_ch, h_size], name="disc_fc")
+                w_conv = weight_variable([self.feature_map_wh*self.feature_map_wh*repeat_n*n_ch, h_size], name="disc_fc")
                 b_conv = bias_variable([h_size], name="disc_fc")
                 output_t = tf.nn.bias_add(tf.matmul(output_t, w_conv), b_conv)
 

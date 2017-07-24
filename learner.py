@@ -8,15 +8,16 @@ from loader import *
 from model import *
 import cv2
 
-tf.app.flags.DEFINE_string('data_path', '../data/data_ocr', 'Directory path to read the data files')
+tf.app.flags.DEFINE_string('data_path', 'data/data_CelebA', 'Directory path to read the data files')
 tf.app.flags.DEFINE_string('checkpoint_path', 'model', 'Directory path to save checkpoint files')
 
 tf.app.flags.DEFINE_boolean('train_continue', False, 'flag for continue training from previous checkpoint')
 tf.app.flags.DEFINE_boolean('valid_only', False, 'flag for validation only. this will make train_continue flag ignored')
 
 tf.app.flags.DEFINE_integer('batch_size', 16, 'mini-batch size for training')
-tf.app.flags.DEFINE_integer('feature_size', 64, 'encoding feature size for auto encoder')
+tf.app.flags.DEFINE_integer('feature_size', 64, 'size of encoded feature in auto encoder')
 tf.app.flags.DEFINE_integer('channel_size', 128, 'channel size for filter in auto encoder')
+tf.app.flags.DEFINE_integer('feature_map_wh', 8, 'width and height of encoded feature in auto encoder')
 tf.app.flags.DEFINE_float('lr', 8e-5, 'initial learning rate')
 tf.app.flags.DEFINE_float('lr_decay_ratio', 0.5, 'ratio for decaying learning rate')
 tf.app.flags.DEFINE_integer('lr_decay_interval', 20000, 'step interval for decaying learning rate')
@@ -30,19 +31,33 @@ FLAGS = tf.app.flags.FLAGS
 print("Learning rate = %e" % FLAGS.lr)
 
 
+ImageInfo = collections.namedtuple("ImageInfo", ['w', 'h', 'c'])
+mnist_image_info = ImageInfo(w=28, h=28, c=1)
+cifar10_image_info = ImageInfo(w=32, h=32, c=3)
+celeb_a_image_info = ImageInfo(w=128, h=128, c=3)
+
 class GanLearner:
     def __init__(self):
         self.sess = tf.Session()
         self.batch_size = FLAGS.batch_size
         self.feature_size = FLAGS.feature_size
         self.channel_size = FLAGS.channel_size
-        self.model = BEGANModel(noise_size=self.feature_size, channel_size=self.channel_size, batch_size=self.batch_size)
+        self.feature_map_wh = FLAGS.feature_map_wh
 
-        self.train_loader = Loader(data_path=os.path.join(FLAGS.data_path, "train"), batch_size=self.batch_size)
+        self.image_info = cifar10_image_info
+        self.model = BEGANModel(
+            noise_size=self.feature_size,
+            channel_size=self.channel_size,
+            image_info=self.image_info,
+            batch_size=self.batch_size,
+            feature_map_wh=self.feature_map_wh,
+        )
+
+        self.train_loader = Loader(os.path.join(FLAGS.data_path, "train"), self.image_info, self.batch_size)
         try:
-            self.valid_loader = Loader(data_path=os.path.join(FLAGS.data_path, "val"), batch_size=self.batch_size)
+            self.valid_loader = Loader(os.path.join(FLAGS.data_path, "val"), self.image_info, self.batch_size)
         except FileNotFoundError:
-            self.valid_loader = Loader(data_path=os.path.join(FLAGS.data_path, "valid"), batch_size=self.batch_size)
+            self.valid_loader = Loader(os.path.join(FLAGS.data_path, "valid"), self.image_info, self.batch_size)
 
         self.epoch_counter = 1
         self.lr = FLAGS.lr

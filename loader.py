@@ -11,13 +11,9 @@ BatchTuple = collections.namedtuple("BatchTuple", ['images', 'labels'])
 class Loader:
     RawDataTuple = collections.namedtuple("RawDataTuple", ['path', 'label'])
 
-    def __init__(self, data_path, batch_size):
+    def __init__(self, data_path, image_info, batch_size):
         self.sess = tf.Session()
-        self.image_info = {
-            'width': 128,
-            'height': 128,
-            'channel': 3,
-        }
+        self.image_info = image_info
 
         self.data = []
         self.data_path = data_path
@@ -58,7 +54,7 @@ class Loader:
 
     def get_empty_batch(self, batch_size):
         batch = BatchTuple(
-            images=np.zeros(dtype=np.uint8, shape=[batch_size, self.image_info['height'], self.image_info['width'], self.image_info['channel']]),
+            images=np.zeros(dtype=np.uint8, shape=[batch_size, self.image_info.h, self.image_info.w, self.image_info.c]),
             labels=np.zeros(dtype=np.int32, shape=[batch_size])
         )
         return batch
@@ -79,8 +75,13 @@ class Loader:
                 image = cv2.imread(single_data.path, 1)
 
                 # CelebA image size : 218 x 178
-                image = image[20:-20, :, :]
-                image = cv2.resize(image, (128, 128), interpolation=cv2.INTER_CUBIC)
+                if image.shape[0] == 218 and image.shape[1] == 178:
+                    image = image[20:-20, :, :]
+                    image = cv2.resize(
+                        image,
+                        (self.image_info.h, self.image_info.w),
+                        interpolation=cv2.INTER_CUBIC
+                    )
 
                 batch.images[idx, :, :, :] = image
                 batch.labels[idx] = single_data.label
